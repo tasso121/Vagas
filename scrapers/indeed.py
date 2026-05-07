@@ -30,7 +30,8 @@ class IndeedScraper:
                     await job_page.goto(url, wait_until="domcontentloaded", timeout=20000)
                     desc_el = await job_page.query_selector("#jobDescriptionText")
                     description = await desc_el.inner_text() if desc_el else ""
-                except Exception:
+                except Exception as e:
+                    print(f"[IndeedScraper] failed to fetch description for {url}: {e}")
                     description = ""
                 finally:
                     await job_page.close()
