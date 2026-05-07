@@ -31,7 +31,10 @@ class TelegramBot:
     async def _handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
-        action, key = query.data.split(":", 1)
+        parts = query.data.split(":", 1)
+        if len(parts) != 2:
+            return
+        action, key = parts
         dispatch = {
             "avaliar": self._handle_avaliar,
             "ignorar": self._handle_ignorar,
@@ -46,9 +49,11 @@ class TelegramBot:
             await handler(query, key)
 
     async def _handle_ignorar(self, query, key: str):
+        self._pending.pop(key, None)
         await query.edit_message_text("❌ Vaga ignorada.")
 
     async def _handle_descartar(self, query, key: str):
+        self._pending.pop(key, None)
         await query.edit_message_text("❌ Vaga descartada.")
 
     async def _handle_cancelar(self, query, key: str):
