@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 from ai.prompts import EVALUATE_JOB_PROMPT, ADAPT_CV_PROMPT, GENERATE_COVER_LETTER_PROMPT
 
-CV_PATH = Path("cv.md")
+CV_PATH = Path(__file__).parent.parent / "cv.md"
 
 
 class ClaudeRunner:
@@ -23,7 +23,11 @@ class ClaudeRunner:
         try:
             raw = await asyncio.to_thread(self._run_claude, prompt)
             return json.loads(raw)
-        except Exception:
+        except json.JSONDecodeError:
+            print(f"[ClaudeRunner] evaluate_job: invalid JSON response from Claude")
+            return None
+        except subprocess.TimeoutExpired:
+            print("[ClaudeRunner] evaluate_job: claude -p timed out")
             return None
 
     async def adapt_cv(self, job_description: str) -> str:
