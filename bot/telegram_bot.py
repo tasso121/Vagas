@@ -61,7 +61,28 @@ class TelegramBot:
         await query.edit_message_text("❌ Candidatura cancelada.")
 
     async def _handle_avaliar(self, query, key: str):
-        pass  # implemented in Task 8
+        job = self._pending.get(key)
+        if not job:
+            await query.edit_message_text("⚠️ Vaga não encontrada.")
+            return
+        await query.edit_message_text("⏳ Avaliando com IA...")
+        result = await self.claude.evaluate_job(job_description=job.description)
+        if not result:
+            await query.edit_message_text("⚠️ Erro na avaliação. Tente novamente.")
+            return
+        strengths = "\n".join(f"• {s}" for s in result.get("strengths", []))
+        gaps = "\n".join(f"• {g}" for g in result.get("gaps", []))
+        text = (
+            f"📊 <b>Avaliação: {result['grade']} ({result['score']:.1f}/5)</b>\n\n"
+            f"✅ <b>Pontos fortes:</b>\n{strengths}\n\n"
+            f"⚠️ <b>Gaps:</b>\n{gaps}\n\n"
+            f"📝 {result['summary']}"
+        )
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🚀 Candidatar", callback_data=f"candidatar:{key}"),
+            InlineKeyboardButton("❌ Descartar", callback_data=f"descartar:{key}"),
+        ]])
+        await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML")
 
     async def _handle_candidatar(self, query, key: str):
         pass  # implemented in Task 9
