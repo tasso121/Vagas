@@ -94,7 +94,12 @@ class TelegramBot:
         cover_letter = await self.claude.generate_cover_letter(job_description=job.description, company=job.company)
         handler = get_apply_handler(job)
         self._apply_handlers[key] = handler
-        await handler.fill_form(adapted_cv=adapted_cv, cover_letter=cover_letter)
+        try:
+            await handler.fill_form(adapted_cv=adapted_cv, cover_letter=cover_letter)
+        except Exception as e:
+            self._apply_handlers.pop(key, None)
+            await query.edit_message_text(f"⚠️ Erro ao preencher formulário: {e}")
+            return
         text = (
             f"📝 <b>Formulário preenchido!</b>\n\n"
             f"• Currículo adaptado: ✅\n• Carta de apresentação: ✅\n• Campos do form: ✅\n\n"
