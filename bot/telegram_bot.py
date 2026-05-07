@@ -85,13 +85,51 @@ class TelegramBot:
         await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML")
 
     async def _handle_candidatar(self, query, key: str):
-        pass  # implemented in Task 9
+        job = self._pending.get(key)
+        if not job:
+            await query.edit_message_text("⚠️ Vaga não encontrada.")
+            return
+        await query.edit_message_text("⏳ Adaptando currículo e preenchendo formulário...")
+        adapted_cv = await self.claude.adapt_cv(job_description=job.description)
+        cover_letter = await self.claude.generate_cover_letter(job_description=job.description, company=job.company)
+        handler = get_apply_handler(job)
+        self._apply_handlers[key] = handler
+        await handler.fill_form(adapted_cv=adapted_cv, cover_letter=cover_letter)
+        text = (
+            f"📝 <b>Formulário preenchido!</b>\n\n"
+            f"• Currículo adaptado: ✅\n• Carta de apresentação: ✅\n• Campos do form: ✅\n\n"
+            f"🔗 <a href='{job.url}'>Revisar vaga</a>"
+        )
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Confirmar envio", callback_data=f"confirmar:{key}"),
+            InlineKeyboardButton("✏️ Revisar primeiro", callback_data=f"revisar:{key}"),
+            InlineKeyboardButton("❌ Cancelar", callback_data=f"cancelar:{key}"),
+        ]])
+        await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML")
 
     async def _handle_revisar(self, query, key: str):
-        pass  # implemented in Task 9
+        job = self._pending.get(key)
+        url = job.url if job else "URL não disponível"
+        await self.app.bot.send_message(
+            chat_id=self.chat_id,
+            text=f"🔗 Revise a vaga e depois clique Confirmar ou Cancelar:\n{url}",
+        )
+        await query.edit_message_text("⏳ Aguardando revisão... Use os botões acima para confirmar ou cancelar.")
 
     async def _handle_confirmar(self, query, key: str):
-        pass  # implemented in Task 9
+        handler = self._apply_handlers.get(key)
+        if not handler:
+            await query.edit_message_text("⚠️ Sessão expirada. Clique em Candidatar novamente.")
+            return
+        await query.edit_message_text("⏳ Enviando candidatura...")
+        await handler.submit()
+        job = self._pending.get(key)
+        await query.edit_message_text(
+            f"✅ <b>Candidatura enviada!</b>\n\n💼 {job.title if job else '?'} @ {job.company if job else '?'}",
+            parse_mode="HTML"
+        )
+        self._apply_handlers.pop(key, None)
+        self._pending.pop(key, None)
 
     async def run(self):
         await self.app.initialize()
