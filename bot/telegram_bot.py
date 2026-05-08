@@ -3,15 +3,17 @@ from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 from scrapers.base import Job
 from ai.runner import ClaudeRunner
 from apply import get_apply_handler
+from db.store import Store
 
 class TelegramBot:
-    def __init__(self, token: str, chat_id: str):
+    def __init__(self, token: str, chat_id: str, store: "Store | None" = None):
         self.token = token
         self.chat_id = chat_id
         self.app = Application.builder().token(token).build()
         self.claude = ClaudeRunner()
         self._pending: dict[str, Job] = {}
         self._apply_handlers: dict[str, object] = {}
+        self.store = store
         self.app.add_handler(CallbackQueryHandler(self._handle_callback))
 
     async def notify_new_job(self, job: Job):
@@ -49,12 +51,18 @@ class TelegramBot:
             await handler(query, key)
 
     async def _handle_ignorar(self, query, key: str):
-        self._pending.pop(key, None)
         await query.edit_message_text("❌ Vaga ignorada.")
+        self._pending.pop(key, None)
+        if self.store:
+            platform, job_id = key.split(":", 1)
+            await self.store.update_status(platform, job_id, "ignored")
 
     async def _handle_descartar(self, query, key: str):
-        self._pending.pop(key, None)
         await query.edit_message_text("❌ Vaga descartada.")
+        self._pending.pop(key, None)
+        if self.store:
+            platform, job_id = key.split(":", 1)
+            await self.store.update_status(platform, job_id, "rejected")
 
     async def _handle_cancelar(self, query, key: str):
         self._apply_handlers.pop(key, None)
@@ -66,7 +74,11 @@ class TelegramBot:
             await query.edit_message_text("⚠️ Vaga não encontrada.")
             return
         await query.edit_message_text("⏳ Avaliando com IA...")
-        result = await self.claude.evaluate_job(job_description=job.description)
+        try:
+            result = await self.claude.evaluate_job(job_description=job.description)
+        except Exception as e:
+            await query.edit_message_text(f"⚠️ Erro ao avaliar vaga: {e}")
+            return
         if not result:
             await query.edit_message_text("⚠️ Erro na avaliação. Tente novamente.")
             return
@@ -83,6 +95,9 @@ class TelegramBot:
             InlineKeyboardButton("❌ Descartar", callback_data=f"descartar:{key}"),
         ]])
         await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML")
+        if self.store:
+            platform, job_id = key.split(":", 1)
+            await self.store.update_status(platform, job_id, "evaluated", score=result["score"], grade=result["grade"])
 
     async def _handle_candidatar(self, query, key: str):
         job = self._pending.get(key)
@@ -90,27 +105,26 @@ class TelegramBot:
             await query.edit_message_text("⚠️ Vaga não encontrada.")
             return
         await query.edit_message_text("⏳ Adaptando currículo e preenchendo formulário...")
-        adapted_cv = await self.claude.adapt_cv(job_description=job.description)
-        cover_letter = await self.claude.generate_cover_letter(job_description=job.description, company=job.company)
-        handler = get_apply_handler(job)
-        self._apply_handlers[key] = handler
         try:
+            adapted_cv = await self.claude.adapt_cv(job_description=job.description)
+            cover_letter = await self.claude.generate_cover_letter(job_description=job.description, company=job.company)
+            handler = get_apply_handler(job)
+            self._apply_handlers[key] = handler
             await handler.fill_form(adapted_cv=adapted_cv, cover_letter=cover_letter)
+            text = (
+                f"📝 <b>Formulário preenchido!</b>\n\n"
+                f"• Currículo adaptado: ✅\n• Carta de apresentação: ✅\n• Campos do form: ✅\n\n"
+                f"🔗 <a href='{job.url}'>Revisar vaga</a>"
+            )
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("✅ Confirmar envio", callback_data=f"confirmar:{key}"),
+                InlineKeyboardButton("✏️ Revisar primeiro", callback_data=f"revisar:{key}"),
+                InlineKeyboardButton("❌ Cancelar", callback_data=f"cancelar:{key}"),
+            ]])
+            await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML")
         except Exception as e:
             self._apply_handlers.pop(key, None)
-            await query.edit_message_text(f"⚠️ Erro ao preencher formulário: {e}")
-            return
-        text = (
-            f"📝 <b>Formulário preenchido!</b>\n\n"
-            f"• Currículo adaptado: ✅\n• Carta de apresentação: ✅\n• Campos do form: ✅\n\n"
-            f"🔗 <a href='{job.url}'>Revisar vaga</a>"
-        )
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Confirmar envio", callback_data=f"confirmar:{key}"),
-            InlineKeyboardButton("✏️ Revisar primeiro", callback_data=f"revisar:{key}"),
-            InlineKeyboardButton("❌ Cancelar", callback_data=f"cancelar:{key}"),
-        ]])
-        await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML")
+            await query.edit_message_text(f"⚠️ Erro ao preparar candidatura: {e}")
 
     async def _handle_revisar(self, query, key: str):
         job = self._pending.get(key)
@@ -133,6 +147,9 @@ class TelegramBot:
             f"✅ <b>Candidatura enviada!</b>\n\n💼 {job.title if job else '?'} @ {job.company if job else '?'}",
             parse_mode="HTML"
         )
+        if self.store:
+            platform, job_id = key.split(":", 1)
+            await self.store.update_status(platform, job_id, "applied")
         self._apply_handlers.pop(key, None)
         self._pending.pop(key, None)
 

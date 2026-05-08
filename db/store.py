@@ -1,5 +1,6 @@
 import sqlite3
 import asyncio
+from pathlib import Path
 from scrapers.base import Job
 
 class Store:
@@ -10,6 +11,7 @@ class Store:
         await asyncio.to_thread(self._create_tables)
 
     def _create_tables(self):
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS jobs (

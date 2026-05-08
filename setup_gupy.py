@@ -1,4 +1,4 @@
-"""Run once to save LinkedIn session cookies for the scraper."""
+"""Run once to save Gupy browser session (use when login is via Google/OAuth)."""
 import asyncio
 from playwright.async_api import async_playwright
 from pathlib import Path
@@ -9,13 +9,13 @@ async def main():
         browser = await p.firefox.launch(headless=False)
         context = await browser.new_context()
         page = await context.new_page()
-        await page.goto("https://www.linkedin.com/login")
-        print("Log in to LinkedIn manually in the browser window.")
-        print("Press ENTER here when you are logged in...")
+        await page.goto("https://portal.gupy.io/login")
+        print("Faça login no Gupy com sua conta Google no navegador.")
+        print("Quando estiver logado e ver a tela principal, pressione ENTER aqui...")
         input()
-        await context.storage_state(path="data/linkedin_session.json")
+        await context.storage_state(path="data/gupy_session.json")
         await browser.close()
-    print("Session saved to data/linkedin_session.json")
+    print("Sessão salva em data/gupy_session.json")
 
 if __name__ == "__main__":
     asyncio.run(main())

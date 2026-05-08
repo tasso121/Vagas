@@ -4,3 +4,9 @@ output/
 __pycache__/
 *.pyc
 .pytest_cache/
+cv.md
+.venv/
+venv/
+*.log
+.idea/
+.vscode/
